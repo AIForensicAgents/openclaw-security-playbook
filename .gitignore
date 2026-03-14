@@ -1,0 +1,90 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+certs/
+keys/
+ssl/
+secrets/
+
+# Coverage and test output
+coverage/
+.nyc_output/
+test-results/
+junit.xml
+
+# Build output
+dist/
+build/
+out/
+lib/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Docker volumes and data
+docker-volumes/
+data/
+.docker/
+docker-compose.override.yml
+
+# Runtime and temp files
+tmp/
+temp/
+.tmp/
+*.pid
+*.seed
+*.pid.lock
+.cache/
+
+# Node.js specific
+.node_repl_history
+.npm
+.eslintcache
+.prettierignore
