@@ -1,0 +1,37 @@
+{
+  "name": "openclaw-security-playbook",
+  "version": "1.0.0",
+  "description": "Layer-by-layer security hardening for OpenClaw AI agent deployments",
+  "main": "src/index.js",
+  "scripts": {
+    "audit": "node src/index.js --audit",
+    "test": "jest --coverage",
+    "lint": "eslint src/",
+    "start": "node src/index.js"
+  },
+  "keywords": [
+    "openclaw",
+    "security",
+    "ai-agent",
+    "prompt-injection",
+    "sandbox",
+    "audit"
+  ],
+  "author": "OpenClaw Security Community",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.0",
+    "sharp": "^0.33.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "eslint": "^8.56.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aiforensicagents/openclaw-security-playbook"
+  }
+}
