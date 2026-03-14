@@ -1,0 +1,76 @@
+FROM node:20.11.1-alpine3.19 AS builder
+
+WORKDIR /build
+
+COPY package*.json ./
+
+RUN npm ci --only=production && \
+    npm cache clean --force
+
+COPY . .
+
+RUN npm run build 2>/dev/null || true
+
+FROM node:20.11.1-alpine3.19 AS production
+
+LABEL org.opencontainers.image.title="OpenClaw" \
+      org.opencontainers.image.description="OpenClaw application - secure container" \
+      org.opencontainers.image.vendor="OpenClaw" \
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.source="https://github.com/openclaw/openclaw" \
+      org.opencontainers.image.licenses="MIT" \
+      security.policy="restricted" \
+      security.privileged="false" \
+      security.readonly-rootfs="true" \
+      security.no-new-privileges="true" \
+      security.run-as-non-root="true"
+
+ENV NODE_ENV=production \
+    NPM_CONFIG_LOGLEVEL=warn \
+    NPM_CONFIG_AUDIT=true \
+    NODE_OPTIONS="--max-old-space-size=512 --disable-proto=throw" \
+    NO_UPDATE_NOTIFIER=1 \
+    npm_config_unsafe_perm=false
+
+RUN apk update && \
+    apk upgrade --no-cache && \
+    apk add --no-cache \
+        dumb-init \
+        curl \
+        tini && \
+    rm -rf /var/cache/apk/* /tmp/* /root/.npm /root/.node-gyp
+
+RUN addgroup -S openclaw -g 1001 && \
+    adduser -S openclaw -u 1001 -G openclaw -h /home/openclaw -s /sbin/nologin && \
+    mkdir -p /app/logs /app/tmp /app/data && \
+    chown -R openclaw:openclaw /app /home/openclaw
+
+WORKDIR /app
+
+COPY --from=builder --chown=openclaw:openclaw /build/node_modules ./node_modules
+COPY --from=builder --chown=openclaw:openclaw /build/package*.json ./
+COPY --from=builder --chown=openclaw:openclaw /build/ ./
+
+RUN find /app -type d -exec chmod 755 {} \; && \
+    find /app -type f -exec chmod 644 {} \; && \
+    find /app/node_modules/.bin -type f -exec chmod 755 {} \; 2>/dev/null || true && \
+    chmod -R 755 /app/tmp /app/logs /app/data && \
+    chown -R openclaw:openclaw /app
+
+RUN chmod -R a-w /app/node_modules && \
+    chmod -R a-w /app/package*.json
+
+VOLUME ["/app/logs", "/app/data"]
+
+USER openclaw:openclaw
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
+
+READ_ONLY=true
+
+ENTRYPOINT ["dumb-init", "--"]
+
+CMD ["node", "server.js"]
