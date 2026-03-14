@@ -1,0 +1,755 @@
+{
+  "openClawSecurity": {
+    "version": "1.0.0",
+    "gateway": {
+      "bindAddress": "127.0.0.1",
+      "port": 18789,
+      "tls": {
+        "enabled": true,
+        "mutualTLS": {
+          "enabled": true,
+          "clientCertRequired": true,
+          "caCertPath": "/etc/openclaw/certs/ca.pem",
+          "serverCertPath": "/etc/openclaw/certs/server.pem",
+          "serverKeyPath": "/etc/openclaw/certs/server-key.pem",
+          "clientCACertPath": "/etc/openclaw/certs/client-ca.pem",
+          "minTLSVersion": "1.3",
+          "cipherSuites": [
+            "TLS_AES_256_GCM_SHA384",
+            "TLS_CHACHA20_POLY1305_SHA256"
+          ],
+          "certificateRotation": {
+            "enabled": true,
+            "checkIntervalSeconds": 3600,
+            "renewBeforeExpiryDays": 30
+          }
+        }
+      },
+      "rateLimiting": {
+        "enabled": true,
+        "requestsPerMinute": 120,
+        "burstSize": 20
+      },
+      "requestValidation": {
+        "maxBodySizeBytes": 1048576,
+        "allowedContentTypes": [
+          "application/json"
+        ],
+        "headerSanitization": true
+      }
+    },
+    "sanitization": {
+      "input": {
+        "enabled": true,
+        "maxInputLength": 65536,
+        "stripControlCharacters": true,
+        "unicodeNormalization": "NFC",
+        "encodingValidation": "UTF-8",
+        "promptInjectionDetection": {
+          "enabled": true,
+          "mode": "block",
+          "patterns": [
+            "ignore previous instructions",
+            "disregard all prior",
+            "system prompt override",
+            "you are now",
+            "new instructions:",
+            "forget everything"
+          ],
+          "similarityThreshold": 0.85,
+          "logAttempts": true
+        },
+        "htmlSanitization": {
+          "enabled": true,
+          "stripAllTags": true
+        },
+        "sqlInjectionPrevention": {
+          "enabled": true,
+          "mode": "block"
+        },
+        "pathTraversalPrevention": {
+          "enabled": true,
+          "blockPatterns": [
+            "../",
+            "..\\",
+            "%2e%2e",
+            "%252e%252e"
+          ]
+        }
+      },
+      "output": {
+        "enabled": true,
+        "piiRedaction": {
+          "enabled": true,
+          "types": [
+            "ssn",
+            "credit_card",
+            "email",
+            "phone",
+            "ip_address",
+            "date_of_birth",
+            "passport_number",
+            "drivers_license"
+          ],
+          "redactionString": "[REDACTED]",
+          "logRedactions": true
+        },
+        "secretsDetection": {
+          "enabled": true,
+          "patterns": [
+            "api[_-]?key",
+            "secret[_-]?key",
+            "access[_-]?token",
+            "bearer\\s+[a-zA-Z0-9\\-._~+/]+=*",
+            "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----",
+            "aws[_-]?secret",
+            "password\\s*[:=]"
+          ],
+          "action": "redact"
+        },
+        "maxOutputLength": 131072
+      }
+    },
+    "memory": {
+      "scanInterval": {
+        "seconds": 30,
+        "onWrite": true,
+        "onRead": true,
+        "fullScanIntervalMinutes": 15
+      },
+      "patterns": {
+        "sensitiveDataPatterns": [
+          {
+            "name": "credit_card",
+            "regex": "\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3(?:0[0-5]|[68][0-9])[0-9]{11}|6(?:011|5[0-9]{2})[0-9]{12})\\b",
+            "severity": "critical",
+            "action": "purge_and_alert"
+          },
+          {
+            "name": "ssn",
+            "regex": "\\b[0-9]{3}-[0-9]{2}-[0-9]{4}\\b",
+            "severity": "critical",
+            "action": "purge_and_alert"
+          },
+          {
+            "name": "private_key",
+            "regex": "-----BEGIN\\s+(RSA|EC|DSA|OPENSSH)?\\s*PRIVATE\\s+KEY-----",
+            "severity": "critical",
+            "action": "purge_and_alert"
+          },
+          {
+            "name": "api_key_generic",
+            "regex": "(?i)(api[_-]?key|apikey|secret[_-]?key|access[_-]?token)\\s*[:=]\\s*['\"]?[a-zA-Z0-9\\-._~+/]{16,}",
+            "severity": "high",
+            "action": "purge_and_alert"
+          },
+          {
+            "name": "jwt_token",
+            "regex": "eyJ[a-zA-Z0-9_-]*\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]*",
+            "severity": "high",
+            "action": "purge_and_alert"
+          },
+          {
+            "name": "connection_string",
+            "regex": "(?i)(mongodb|postgres|mysql|redis|amqp)://[^\\s]+",
+            "severity": "high",
+            "action": "purge_and_alert"
+          }
+        ],
+        "customPatterns": [],
+        "patternUpdateSource": {
+          "enabled": false,
+          "url": "",
+          "checkIntervalHours": 24,
+          "signatureVerification": true
+        }
+      },
+      "encryption": {
+        "atRest": true,
+        "algorithm": "AES-256-GCM",
+        "keyRotationIntervalDays": 90,
+        "keyStorePath": "/etc/openclaw/keys/memory-keys.vault"
+      },
+      "retention": {
+        "maxAgeHours": 24,
+        "maxEntries": 10000,
+        "secureDeletion": true,
+        "deletionMethod": "overwrite_3pass"
+      }
+    },
+    "inference": {
+      "firewall": {
+        "enabled": true,
+        "rules": [
+          {
+            "name": "block_code_execution_requests",
+            "description": "Block attempts to request arbitrary code execution outside sandbox",
+            "condition": "intent == 'arbitrary_code_execution' && context != 'sandbox'",
+            "action": "block",
+            "severity": "critical"
+          },
+          {
+            "name": "block_privilege_escalation",
+            "description": "Block attempts to escalate privileges",
+            "condition": "intent == 'privilege_escalation'",
+            "action": "block",
+            "severity": "critical"
+          },
+          {
+            "name": "block_data_exfiltration",
+            "description": "Block attempts to exfiltrate data to external endpoints",
+            "condition": "intent == 'data_exfiltration'",
+            "action": "block",
+            "severity": "critical"
+          },
+          {
+            "name": "rate_limit_network_calls",
+            "description": "Rate limit outbound network requests from inference",
+            "condition": "action_type == 'network_request'",
+            "action": "rate_limit",
+            "limit": 10,
+            "windowSeconds": 60,
+            "severity": "medium"
+          },
+          {
+            "name": "block_system_modification",
+            "description": "Block attempts to modify system files or configurations",
+            "condition": "intent == 'system_modification'",
+            "action": "block",
+            "severity": "critical"
+          }
+        ],
+        "defaultAction": "allow",
+        "logAllDecisions": true
+      },
+      "leakDetection": {
+        "enabled": true,
+        "monitors": [
+          {
+            "type": "system_prompt_leak",
+            "enabled": true,
+            "action": "block_and_alert",
+            "sensitivityThreshold": 0.7
+          },
+          {
+            "type": "training_data_extraction",
+            "enabled": true,
+            "action": "block_and_alert",
+            "sensitivityThreshold": 0.8
+          },
+          {
+            "type": "model_weight_inference",
+            "enabled": true,
+            "action": "block_and_alert"
+          },
+          {
+            "type": "conversation_context_leak",
+            "enabled": true,
+            "action": "block_and_alert",
+            "crossSessionDetection": true
+          },
+          {
+            "type": "credential_leak",
+            "enabled": true,
+            "action": "block_and_purge",
+            "patterns": "inherit_from_memory_patterns"
+          }
+        ],
+        "outputScanBeforeDelivery": true,
+        "quarantineOnDetection": true
+      },
+      "humanApproval": {
+        "enabled": true,
+        "actions": [
+          {
+            "action": "file_system_write",
+            "requiresApproval": true,
+            "timeoutSeconds": 300,
+            "defaultOnTimeout": "deny",
+            "notificationChannels": [
+              "ui",
+              "webhook"
+            ]
+          },
+          {
+            "action": "network_request_external",
+            "requiresApproval": true,
+            "timeoutSeconds": 300,
+            "defaultOnTimeout": "deny",
+            "notificationChannels": [
+              "ui",
+              "webhook"
+            ]
+          },
+          {
+            "action": "code_execution",
+            "requiresApproval": true,
+            "timeoutSeconds": 300,
+            "defaultOnTimeout": "deny",
+            "notificationChannels": [
+              "ui",
+              "webhook"
+            ]
+          },
+          {
+            "action": "database_mutation",
+            "requiresApproval": true,
+            "timeoutSeconds": 300,
+            "defaultOnTimeout": "deny",
+            "notificationChannels": [
+              "ui",
+              "webhook"
+            ]
+          },
+          {
+            "action": "secret_access",
+            "requiresApproval": true,
+            "timeoutSeconds": 120,
+            "defaultOnTimeout": "deny",
+            "notificationChannels": [
+              "ui",
+              "webhook",
+              "email"
+            ]
+          },
+          {
+            "action": "skill_installation",
+            "requiresApproval": true,
+            "timeoutSeconds": 600,
+            "defaultOnTimeout": "deny",
+            "notificationChannels": [
+              "ui",
+              "webhook",
+              "email"
+            ]
+          },
+          {
+            "action": "configuration_change",
+            "requiresApproval": true,
+            "timeoutSeconds": 600,
+            "defaultOnTimeout": "deny",
+            "notificationChannels": [
+              "ui",
+              "webhook",
+              "email"
+            ]
+          }
+        ],
+        "approvalWebhook": {
+          "url": "",
+          "hmacSecret": "${APPROVAL_WEBHOOK_HMAC_SECRET}",
+          "retryAttempts": 3
+        },
+        "multiPartyApproval": {
+          "enabled": false,
+          "requiredApprovers": 2,
+          "approverRoles": [
+            "admin",
+            "security_officer"
+          ]
+        }
+      }
+    },
+    "contextScrubbing": {
+      "enabled": true,
+      "scrubOnContextSwitch": true,
+      "scrubOnSessionEnd": true,
+      "scrubOnTimeout": true,
+      "sessionTimeoutMinutes": 60,
+      "rules": [
+        {
+          "name": "remove_credentials",
+          "description": "Remove all detected credentials from context",
+          "trigger": "always",
+          "targetPatterns": [
+            "password",
+            "api_key",
+            "token",
+            "secret",
+            "private_key"
+          ],
+          "replacementStrategy": "placeholder",
+          "placeholder": "[CREDENTIAL_REMOVED]"
+        },
+        {
+          "name": "remove_pii",
+          "description": "Remove personally identifiable information",
+          "trigger": "always",
+          "targetPatterns": [
+            "ssn",
+            "credit_card",
+            "date_of_birth",
+            "passport_number"
+          ],
+          "replacementStrategy": "placeholder",
+          "placeholder": "[PII_REMOVED]"
+        },
+        {
+          "name": "truncate_long_context",
+          "description": "Truncate context that exceeds maximum safe length",
+          "trigger": "context_length_exceeded",
+          "maxContextTokens": 32000,
+          "truncationStrategy": "remove_oldest_first",
+          "preserveSystemPrompt": true
+        },
+        {
+          "name": "remove_tool_outputs",
+          "description": "Scrub sensitive tool output data after processing",
+          "trigger": "tool_execution_complete",
+          "targetPatterns": [
+            "database_results",
+            "file_contents",
+            "network_responses"
+          ],
+          "replacementStrategy": "summary_only"
+        }
+      ],
+      "verification": {
+        "postScrubScan": true,
+        "failAction": "block_and_alert"
+      }
+    },
+    "docker": {
+      "socketMount": {
+        "allowed": false,
+        "blockPaths": [
+          "/var/run/docker.sock",
+          "/run/docker.sock",
+          "/var/run/containerd/containerd.sock"
+        ]
+      },
+      "privileged": {
+        "allowed": false,
+        "enforceNonRoot": true,
+        "runAsUser": 65534,
+        "runAsGroup": 65534,
+        "readOnlyRootFilesystem": true
+      },
+      "capabilities": {
+        "drop": [
+          "ALL"
+        ],
+        "add": []
+      },
+      "securityOptions": {
+        "noNewPrivileges": true,
+        "seccompProfile": "runtime/default",
+        "apparmorProfile": "openclaw-restricted",
+        "selinuxOptions": {
+          "level": "s0:c100,c200"
+        }
+      },
+      "resources": {
+        "memoryLimit": "512m",
+        "memoryReservation": "256m",
+        "cpuLimit": "1.0",
+        "cpuReservation": "0.25",
+        "pidsLimit": 100,
+        "nofileLimit": 1024
+      },
+      "networking": {
+        "networkMode": "none",
+        "allowedOutbound": [],
+        "dnsPolicy": "none"
+      },
+      "volumes": {
+        "allowHostMounts": false,
+        "allowedVolumes": [
+          {
+            "name": "openclaw-data",
+            "type": "tmpfs",
+            "sizeLimit": "100m",
+            "readOnly": false
+          },
+          {
+            "name": "openclaw-config",
+            "type": "configmap",
+            "readOnly": true
+          }
+        ]
+      },
+      "imagePolicy": {
+        "allowedRegistries": [],
+        "requireSignedImages": true,
+        "scanOnPull": true,
+        "maxCVSSScore": 5.0
+      }
+    },
+    "skills": {
+      "whitelist": {
+        "enabled": true,
+        "enforceMode": "strict",
+        "allowedSkills": [
+          {
+            "name": "file_read",
+            "version": ">=1.0.0",
+            "sha256": "",
+            "allowedPaths": [
+              "/workspace/**"
+            ],
+            "deniedPaths": [
+              "/etc/**",
+              "/var/**",
+              "/root/**",
+              "/home/**/.ssh/**"
+            ]
+          },
+          {
+            "name": "file_write",
+            "version": ">=1.0.0",
+            "sha256": "",
+            "allowedPaths": [
+              "/workspace/output/**"
+            ],
+            "maxFileSizeBytes": 10485760,
+            "requiresHumanApproval": true
+          },
+          {
+            "name": "web_search",
+            "version": ">=1.0.0",
+            "sha256": "",
+            "allowedDomains": [],
+            "rateLimit": {
+              "requestsPerMinute": 10
+            }
+          },
+          {
+            "name": "code_analysis",
+            "version": ">=1.0.0",
+            "sha256": "",
+            "sandboxed": true,
+            "noNetworkAccess": true
+          },
+          {
+            "name": "text_processing",
+            "version": ">=1.0.0",
+            "sha256": "",
+            "sandboxed": true,
+            "noNetworkAccess": true
+          }
+        ],
+        "blockUnlisted": true,
+        "skillIntegrityCheck": {
+          "enabled": true,
+          "verifySignature": true,
+          "publicKeyPath": "/etc/openclaw/keys/skill-signing-public.pem",
+          "checksumAlgorithm": "SHA-256",
+          "verifyAtLoad": true,
+          "verifyAtRuntime": true
+        },
+        "skillIsolation": {
+          "runInSeparateProcess": true,
+          "timeoutSeconds": 30,
+          "maxMemoryMB": 256,
+          "maxCPUPercent": 25
+        },
+        "dynamicLoading": {
+          "allowed": false,
+          "requireRestart": true
+        }
+      }
+    },
+    "audit": {
+      "enabled": true,
+      "appendOnly": {
+        "enabled": true,
+        "storageBackend": "file",
+        "logPath": "/var/log/openclaw/audit/audit.log",
+        "filePermissions": "0440",
+        "immutableAttribute": true,
+        "rotationPolicy": {
+          "maxSizeMB": 100,
+          "maxAgeDays": 365,
+          "compress": true,
+          "compressedRetentionDays": 730
+        },
+        "writeVerification": {
+          "enabled": true,
+          "verifyAfterWrite": true,
+          "failAction": "halt_and_alert"
+        }
+      },
+      "hmac": {
+        "enabled": true,
+        "algorithm": "HMAC-SHA-512",
+        "keyPath": "/etc/openclaw/keys/audit-hmac.key",
+        "keyRotationIntervalDays": 30,
+        "chainEntries": true,
+        "chainAlgorithm": "SHA-256",
+        "includeFields": [
+          "timestamp",
+          "event_type",
+          "actor",
+          "action",
+          "resource",
+          "outcome",
+          "metadata",
+          "previous_hash"
+        ],
+        "verificationSchedule": {
+          "enabled": true,
+          "intervalMinutes": 60,
+          "fullChainVerificationHours": 24,
+          "alertOnFailure": true
+        }
+      },
+      "forwarding": {
+        "enabled": true,
+        "destinations": [
+          {
+            "name": "siem_primary",
+            "type": "syslog",
+            "protocol": "tcp_tls",
+            "host": "",
+            "port": 6514,
+            "format": "CEF",
+            "tlsConfig": {
+              "caCertPath": "/etc/openclaw/certs/siem-ca.pem",
+              "clientCertPath": "/etc/openclaw/certs/siem-client.pem",
+              "clientKeyPath": "/etc/openclaw/certs/siem-client-key.pem",
+              "verifyServer": true
+            },
+            "bufferSize": 10000,
+            "retryAttempts": 5,
+            "retryIntervalSeconds": 10,
+            "batchSize": 100,
+            "flushIntervalSeconds": 5
+          },
+          {
+            "name": "webhook_backup",
+            "type": "webhook",
+            "url": "",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer ${AUDIT_WEBHOOK_TOKEN}"
+            },
+            "hmacHeader": "X-Audit-Signature",
+            "hmacSecret": "${AUDIT_WEBHOOK_HMAC_SECRET}",
+            "retryAttempts": 3,
+            "retryIntervalSeconds": 30,
+            "timeoutSeconds": 10
+          }
+        ],
+        "failoverPolicy": {
+          "onAllDestinationsFail": "buffer_locally",
+          "localBufferMaxSizeMB": 500,
+          "alertOnFailover": true
+        }
+      },
+      "alerts": {
+        "enabled": true,
+        "channels": [
+          {
+            "name": "critical_alerts",
+            "type": "webhook",
+            "url": "",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "hmacSecret": "${ALERT_WEBHOOK_HMAC_SECRET}",
+            "severities": [
+              "critical",
+              "high"
+            ],
+            "throttle": {
+              "maxAlertsPerMinute": 10,
+              "deduplicationWindowSeconds": 300
+            }
+          },
+          {
+            "name": "all_alerts_email",
+            "type": "email",
+            "smtpServer": "",
+            "smtpPort": 587,
+            "useTLS": true,
+            "from": "",
+            "to": [],
+            "severities": [
+              "critical",
+              "high",
+              "medium"
+            ],
+            "throttle": {
+              "maxAlertsPerMinute": 5,
+              "digestMode": true,
+              "digestIntervalMinutes": 15
+            }
+          }
+        ],
+        "rules": [
+          {
+            "name": "prompt_injection_detected",
+            "condition": "event_type == 'prompt_injection'",
+            "severity": "critical",
+            "message": "Prompt injection attempt detected and blocked"
+          },
+          {
+            "name": "data_leak_detected",
+            "condition": "event_type == 'data_leak'",
+            "severity": "critical",
+            "message": "Potential data leak detected in inference output"
+          },
+          {
+            "name": "unauthorized_skill_attempt",
+            "condition": "event_type == 'skill_blocked'",
+            "severity": "high",
+            "message": "Attempt to execute non-whitelisted skill"
+          },
+          {
+            "name": "sensitive_data_in_memory",
+            "condition": "event_type == 'memory_pattern_match'",
+            "severity": "high",
+            "message": "Sensitive data pattern detected in agent memory"
+          },
+          {
+            "name": "approval_timeout",
+            "condition": "event_type == 'human_approval_timeout'",
+            "severity": "medium",
+            "message": "Human approval request timed out, action denied"
+          },
+          {
+            "name": "audit_integrity_failure",
+            "condition": "event_type == 'hmac_verification_failed'",
+            "severity": "critical",
+            "message": "Audit log integrity verification failed - possible tampering"
+          },
+          {
+            "name": "container_security_violation",
+            "condition": "event_type == 'container_policy_violation'",
+            "severity": "critical",
+            "message": "Container security policy violation detected"
+          },
+          {
+            "name": "multiple_failed_auth",
+            "condition": "event_type == 'mtls_auth_failure' && count_in_window(300) >= 5",
+            "severity": "critical",
+            "message": "Multiple mTLS authentication failures detected"
+          },
+          {
+            "name": "context_scrub_failure",
+            "condition": "event_type == 'context_scrub_failed'",
+            "severity": "high",
+            "message": "Context scrubbing verification failed, output blocked"
+          }
+        ]
+      },
+      "events": {
+        "logAllInferenceRequests": true,
+        "logAllSkillExecutions": true,
+        "logAllApprovalFlows": true,
+        "logAllMemoryAccess": true,
+        "logAllConfigChanges": true,
+        "logAllAuthEvents": true,
+        "logAllSanitizationActions": true,
+        "includeRequestMetadata": true,
+        "excludeFields": [
+          "raw_input_content",
+          "raw_output_content"
+        ],
+        "timestampFormat": "ISO-8601",
+        "timestampTimezone": "UTC"
+      }
+    }
+  }
+}
